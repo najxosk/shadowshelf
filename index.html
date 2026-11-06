@@ -126,15 +126,24 @@
         </div>
       </div>
 
-      <!-- Rýchle overenie reálnej ceny na trhu -->
+      <!-- Rýchle overenie reálnej ceny / výkup (1-klik) -->
       <div class="space-y-1.5">
-        <span class="text-[11px] text-slate-400 block font-medium">Overiť reálne predaje a ponuky (1-klik):</span>
+        <span class="text-[11px] text-slate-400 block font-medium">Overiť reálnu cenu a výkup (1-klik):</span>
         <div class="grid grid-cols-3 gap-2">
-          <a id="linkTrhKnih" href="#" target="_blank" rel="noopener" class="bg-slate-800 hover:bg-slate-700 text-center text-xs py-2 px-2 rounded border border-slate-700 font-medium transition truncate">
-            🇨🇿 TrhKnih.cz
+          <a id="linkKnihovratok" href="#" target="_blank" rel="noopener" class="bg-slate-800 hover:bg-slate-700 text-center text-xs py-2 px-2 rounded border border-slate-700 font-medium transition truncate">
+            📕 Knihovrátok
           </a>
           <a id="linkBazos" href="#" target="_blank" rel="noopener" class="bg-slate-800 hover:bg-slate-700 text-center text-xs py-2 px-2 rounded border border-slate-700 font-medium transition truncate">
-            🇸🇰 Bazoš.sk
+            🟡 Bazoš.sk
+          </a>
+          <a id="linkBookbot" href="#" target="_blank" rel="noopener" class="bg-slate-800 hover:bg-slate-700 text-center text-xs py-2 px-2 rounded border border-slate-700 font-medium transition truncate">
+            📦 Bookbot.sk
+          </a>
+          <a id="linkRestorio" href="#" target="_blank" rel="noopener" class="bg-slate-800 hover:bg-slate-700 text-center text-xs py-2 px-2 rounded border border-slate-700 font-medium transition truncate">
+            ♻️ Restorio.sk
+          </a>
+          <a id="linkTrhKnih" href="#" target="_blank" rel="noopener" class="bg-slate-800 hover:bg-slate-700 text-center text-xs py-2 px-2 rounded border border-slate-700 font-medium transition truncate">
+            🇨🇿 TrhKnih.cz
           </a>
           <a id="linkGoogle" href="#" target="_blank" rel="noopener" class="bg-slate-800 hover:bg-slate-700 text-center text-xs py-2 px-2 rounded border border-slate-700 font-medium transition truncate">
             🌐 Antikvariáty
@@ -193,8 +202,11 @@
       detailPublisher: document.getElementById('detailPublisher'),
       detailBinding: document.getElementById('detailBinding'),
       detailReason: document.getElementById('detailReason'),
-      linkTrhKnih: document.getElementById('linkTrhKnih'),
+      linkKnihovratok: document.getElementById('linkKnihovratok'),
       linkBazos: document.getElementById('linkBazos'),
+      linkBookbot: document.getElementById('linkBookbot'),
+      linkRestorio: document.getElementById('linkRestorio'),
+      linkTrhKnih: document.getElementById('linkTrhKnih'),
       linkGoogle: document.getElementById('linkGoogle'),
       btnSaveBook: document.getElementById('btnSaveBook'),
       savedCount: document.getElementById('savedCount'),
@@ -522,8 +534,11 @@ PRAVIDLÁ:
       const rawQuery = book.search_query || `${book.title || ''} ${book.author || ''}`.trim();
       const encodedQuery = encodeURIComponent(rawQuery);
 
-      el.linkTrhKnih.href = `https://www.trhknih.cz/hledat?q=${encodedQuery}`;
+      el.linkKnihovratok.href = `https://www.martinus.sk/knihovratok`;
       el.linkBazos.href = `https://knihy.bazos.sk/?hledat=${encodedQuery}`;
+      el.linkBookbot.href = `https://bookbot.sk/p?search=${encodedQuery}`;
+      el.linkRestorio.href = `https://www.restorio.sk/all-products?search=${encodedQuery}`;
+      el.linkTrhKnih.href = `https://www.trhknih.cz/hledat?q=${encodedQuery}`;
       el.linkGoogle.href = `https://www.google.com/search?q=${encodeURIComponent(rawQuery + ' antikvariat cena')}`;
 
       el.btnSaveBook.onclick = () => saveBookToStorage(book);
