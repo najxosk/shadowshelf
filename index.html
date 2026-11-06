@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ShadowShelf v0.2 - Audited Field Scanner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .book-box {
+      position: absolute;
+      pointer-events: auto;
+      cursor: pointer;
+      transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .book-box:hover, .book-box.active-box {
+      z-index: 30;
+      box-shadow: 0 0 0 2px #fff, 0 0 12px rgba(251, 191, 36, 0.9);
+      transform: scale(1.015);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen pb-24 font-sans selection:bg-amber-500 selection:text-slate-950">
+
+  <!-- Horná lišta -->
+  <header class="p-3.5 bg-slate-900/95 backdrop-blur border-b border-slate-800 flex justify-between items-center sticky top-0 z-50">
+    <div class="flex items-center gap-2.5">
+      <span class="text-2xl">📚</span>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-base font-bold tracking-tight text-amber-400">ShadowShelf</h1>
+          <span class="text-[10px] font-mono bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30">v0.2 Audited</span>
+        </div>
+        <p class="text-[11px] text-slate-400">Terénny skener knižných chrbtov</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <select id="modelSelect" class="bg-slate-800 text-slate-200 text-xs px-2 py-1.5 rounded border border-slate-700 focus:outline-none focus:border-amber-400">
+        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+        <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+      </select>
+      <button id="btnSettings" class="text-xs bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded border border-slate-700 transition flex items-center gap-1">
+        <span>🔑</span> <span id="keyStatusDot" class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span>
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-xl mx-auto p-3.5 space-y-4">
+
+    <!-- Ovládací panel kamery a dema -->
+    <section class="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-2.5 shadow-lg">
+      <div class="flex gap-2">
+        <label class="flex-1 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold py-3 px-4 rounded-lg text-center cursor-pointer transition shadow-md text-sm flex items-center justify-center gap-2">
+          <span>📷 Odfoť policu / Nahraj</span>
+            <input type="file" id="imageInput" accept="image/*" class="hidden">
+          </label>
+          <button id="btnDemo" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3.5 py-2 rounded-lg border border-slate-700 transition font-medium">
+            Ukážka
+          </button>
+          </div>
+
+          <!-- Rýchly režim priameho fotenia cez zadný foťák -->
+          <label class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs py-2.5 rounded-lg border border-slate-700 transition font-medium text-center block cursor-pointer">
+          📸 Rovno foť (zadný foťák)
+          <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
+          </label>
+
+      <!-- Stavový riadok + telemetria kompresie -->
+      <div class="flex justify-between items-center text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+        <span id="statusMsg" class="truncate">Pripravené. Foťte kolmo na chrbty kníh.</span>
+        <span id="compressionBadge" class="hidden font-mono text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded shrink-0 ml-2"></span>
+      </div>
+    </section>
+
+    <!-- Zobrazovač fotky s 1:1 zarovnanou detekčnou vrstvou -->
+    <section class="bg-slate-900 rounded-xl border border-slate-800 p-2 shadow-2xl flex justify-center items-center min-h-[220px]">
+      <!-- Wrapper presne kopíruje rozmery vykresleného obrázka -->
+      <div id="imageWrapper" class="relative inline-block max-w-full hidden">
+        <img id="previewImage" src="" alt="Náhľad police" class="max-w-full max-h-[70vh] w-auto h-auto block rounded select-none">
+        <div id="detectionOverlay" class="absolute inset-0 pointer-events-none"></div>
+      </div>
+
+      <!-- Prázdny stav -->
+      <div id="emptyState" class="text-slate-500 text-xs text-center p-8 space-y-2">
+        <div class="text-3xl opacity-40">🔍</div>
+        <p>Nahrajte fotku police alebo kliknite na <strong>Ukážka</strong>.<br>Klientska kompresia automaticky zmenší záber na 1600 px.</p>
+      </div>
+    </section>
+
+    <!-- Legenda a počítadlo -->
+    <section id="legendPanel" class="hidden bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 flex flex-wrap justify-between items-center gap-2 text-xs">
+      <div class="flex gap-3">
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span> Zberateľský potenciál</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> Likvidný titul</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-slate-400 inline-block"></span> Bežné / Nejasné</span>
+      </div>
+      <span id="detectedCounter" class="font-mono text-[11px] text-slate-400">0 kníh</span>
+    </section>
+
+    <!-- Detail vybranej knihy -->
+    <section id="detailCard" class="hidden bg-slate-900 p-4 rounded-xl border-2 border-amber-400/60 shadow-xl space-y-3.5">
+      <div class="flex justify-between items-start gap-2">
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span id="detailBadge" class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded">Kategória</span>
+            <span id="detailConfidence" class="text-[10px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">OCR: 95%</span>
+          </div>
+          <h2 id="detailTitle" class="text-base font-bold text-white mt-1.5 leading-snug">Názov knihy</h2>
+          <p id="detailAuthor" class="text-xs text-slate-300">Autor</p>
+        </div>
+        <button id="btnSaveBook" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs px-3 py-2 rounded-lg font-bold transition shrink-0 shadow">
+          ⭐ Uložiť úlovok
+        </button>
+      </div>
+
+      <!-- Bibliografické metadáta a tirážny pomocník -->
+      <div class="bg-slate-950 p-3 rounded-lg text-xs space-y-1.5 border border-slate-800/90">
+        <div class="grid grid-cols-2 gap-2">
+          <div><span class="text-slate-400">Vydavateľ/Edícia:</span> <strong id="detailPublisher" class="text-slate-200 block">-</strong></div>
+          <div><span class="text-slate-400">Väzba:</span> <strong id="detailBinding" class="text-slate-200 block">-</strong></div>
+        </div>
+        <div class="pt-1.5 border-t border-slate-800/80">
+          <span class="text-amber-400/90 font-semibold">🔎 Zberateľská indícia & Tiráž:</span>
+          <p id="detailReason" class="text-slate-300 mt-0.5 leading-relaxed">-</p>
+        </div>
+      </div>
+
+      <!-- Rýchle overenie reálnej ceny na trhu -->
+      <div class="space-y-1.5">
+        <span class="text-[11px] text-slate-400 block font-medium">Overiť reálne predaje a ponuky (1-klik):</span>
+        <div class="grid grid-cols-3 gap-2">
+          <a id="linkTrhKnih" href="#" target="_blank" rel="noopener" class="bg-slate-800 hover:bg-slate-700 text-center text-xs py-2 px-2 rounded border border-slate-700 font-medium transition truncate">
+            🇨🇿 TrhKnih.cz
+          </a>
+          <a id="linkBazos" href="#" target="_blank" rel="noopener" class="bg-slate-800 hover:bg-slate-700 text-center text-xs py-2 px-2 rounded border border-slate-700 font-medium transition truncate">
+            🇸🇰 Bazoš.sk
+          </a>
+          <a id="linkGoogle" href="#" target="_blank" rel="noopener" class="bg-slate-800 hover:bg-slate-700 text-center text-xs py-2 px-2 rounded border border-slate-700 font-medium transition truncate">
+            🌐 Antikvariáty
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Zoznam uložených úlovkov -->
+    <section class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
+      <div class="flex justify-between items-center">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+          <span>Uložené úlovky v telefóne</span>
+          <span id="savedCount" class="bg-slate-800 px-2 py-0.5 rounded text-amber-400 font-mono">0</span>
+        </h3>
+        <div class="flex gap-2">
+          <button id="btnExportCsv" class="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded border border-slate-700 transition">
+            📥 Export CSV
+          </button>
+          <button id="btnClearSaved" class="text-[11px] bg-slate-800 hover:bg-rose-950 text-rose-400 px-2 py-1 rounded border border-slate-700 transition">
+            Vymazať
+          </button>
+        </div>
+      </div>
+      <div id="savedList" class="space-y-2 text-xs max-h-64 overflow-y-auto pr-1"></div>
+    </section>
+
+  </main>
+
+  <script>
+    // Stav aplikácie
+    let apiKey = localStorage.getItem('SHADOWSHELF_API_KEY') || '';
+    let savedBooks = JSON.parse(localStorage.getItem('SHADOWSHELF_SAVED_V2') || '[]');
+    let activeBoxElement = null;
+
+    const el = {
+      modelSelect: document.getElementById('modelSelect'),
+      btnSettings: document.getElementById('btnSettings'),
+      keyStatusDot: document.getElementById('keyStatusDot'),
+      imageInput: document.getElementById('imageInput'),
+      cameraInput: document.getElementById('cameraInput'),
+      btnDemo: document.getElementById('btnDemo'),
+      statusMsg: document.getElementById('statusMsg'),
+      compressionBadge: document.getElementById('compressionBadge'),
+      imageWrapper: document.getElementById('imageWrapper'),
+      previewImage: document.getElementById('previewImage'),
+      detectionOverlay: document.getElementById('detectionOverlay'),
+      emptyState: document.getElementById('emptyState'),
+      legendPanel: document.getElementById('legendPanel'),
+      detectedCounter: document.getElementById('detectedCounter'),
+      detailCard: document.getElementById('detailCard'),
+      detailBadge: document.getElementById('detailBadge'),
+      detailConfidence: document.getElementById('detailConfidence'),
+      detailTitle: document.getElementById('detailTitle'),
+      detailAuthor: document.getElementById('detailAuthor'),
+      detailPublisher: document.getElementById('detailPublisher'),
+      detailBinding: document.getElementById('detailBinding'),
+      detailReason: document.getElementById('detailReason'),
+      linkTrhKnih: document.getElementById('linkTrhKnih'),
+      linkBazos: document.getElementById('linkBazos'),
+      linkGoogle: document.getElementById('linkGoogle'),
+      btnSaveBook: document.getElementById('btnSaveBook'),
+      savedCount: document.getElementById('savedCount'),
+      savedList: document.getElementById('savedList'),
+      btnExportCsv: document.getElementById('btnExportCsv'),
+      btnClearSaved: document.getElementById('btnClearSaved')
+    };
+
+    // Inicializácia
+    updateKeyStatus();
+    renderSavedList();
+
+    function updateKeyStatus() {
+      if (apiKey && apiKey.length > 10) {
+        el.keyStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 inline-block';
+      } else {
+        el.keyStatusDot.className = 'w-2 h-2 rounded-full bg-rose-500 inline-block';
+      }
+    }
+
+    // Správa API kľúča
+    el.btnSettings.addEventListener('click', () => {
+      const input = prompt('Zadaj svoj Google Gemini API kľúč (ukladá sa len lokálne v tvojom prehliadači):', apiKey);
+      if (input !== null) {
+        apiKey = input.trim();
+        localStorage.setItem('SHADOWSHELF_API_KEY', apiKey);
+        updateKeyStatus();
+      }
+    });
+
+    // 1. KLIENTSKA KOMPRESIA A NORMALIZÁCIA OBRAZU (Max 1600px, JPEG 0.82)
+    async function compressAndNormalizeImage(file) {
+      return new Promise((resolve, reject) => {
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(objectUrl);
+          const MAX_DIM = 1600;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height && width > MAX_DIM) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          } else if (height > MAX_DIM) {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Dynamická kvalita: ak je výsledok príliš veľký na API, klesáme na 0.5
+          let quality = 0.82;
+          let dataUrl = canvas.toDataURL('image/jpeg', quality);
+          let base64 = dataUrl.split(',')[1];
+          let bytes = Math.round((base64.length * 3) / 4);
+          while (bytes > 4000000 && quality > 0.5) {
+            quality = Math.max(0.5, quality - 0.12);
+            dataUrl = canvas.toDataURL('image/jpeg', quality);
+            base64 = dataUrl.split(',')[1];
+            bytes = Math.round((base64.length * 3) / 4);
+          }
+
+          const compressedKb = Math.round((base64.length * 3) / 4 / 1024);
+          const originalKb = Math.round(file.size / 1024);
+
+          resolve({
+            dataUrl,
+            base64,
+            width,
+            height,
+            originalKb,
+            compressedKb
+          });
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error('Nepodarilo sa načítať obrazový súbor. Uistite sa, že ide o štandardný formát JPEG/PNG/WebP.'));
+        };
+        img.src = objectUrl;
+      });
+    }
+
+    // 2. BEZPEČNÉ PARSOVANIE JSON ODPOVEDE
+    function safeParseJSON(rawText) {
+      if (!rawText) throw new Error('Prázdna odpoveď z modelu.');
+      try {
+        return JSON.parse(rawText);
+      } catch (e) {
+        const cleaned = rawText
+          .replace(/```json/gi, '')
+          .replace(/```/g, '')
+          .trim();
+        return JSON.parse(cleaned);
+      }
+    }
+
+    // Spracovanie fotky z kamery / úložiska (zdieľané pre galériu aj priame foťák)
+    async function handleImageFile(file) {
+      try {
+        el.statusMsg.innerText = 'Komprimujem fotografiu...';
+        el.detailCard.classList.add('hidden');
+        el.detectionOverlay.innerHTML = '';
+
+        const processed = await compressAndNormalizeImage(file);
+
+        el.previewImage.src = processed.dataUrl;
+        el.emptyState.classList.add('hidden');
+        el.imageWrapper.classList.remove('hidden');
+
+        el.compressionBadge.classList.remove('hidden');
+        el.compressionBadge.innerText = `${processed.originalKb} KB ➔ ${processed.compressedKb} KB (${processed.width}×${processed.height})`;
+
+        if (!apiKey) {
+          el.statusMsg.innerHTML = '<span class="text-rose-400 font-semibold">Chýba API kľúč! Klikni na ikonu 🔑 vpravo hore.</span>';
+          return;
+        }
+
+        await runVisionAnalysis(processed.base64);
+      } catch (err) {
+        el.statusMsg.innerHTML = `<span class="text-rose-400">Chyba: ${err.message}</span>`;
+      }
+    }
+
+    el.imageInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) handleImageFile(file);
+      e.target.value = '';
+    });
+
+    el.cameraInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) handleImageFile(file);
+      e.target.value = '';
+    });
+
+    // 3. VOLANIE GEMINI VISION API S AUDITOVANÝM PROMPTOM
+    async function runVisionAnalysis(base64Jpeg) {
+      const selectedModel = el.modelSelect.value;
+      el.statusMsg.innerText = `Analyzujem chrbty kníh cez ${selectedModel}...`;
+
+      const systemPrompt = `Si špecializovaný bibliografický OCR parser knižných chrbtov a antikvariátny analytik.
+Analyzuj fotografiu police a identifikuj jednotlivé chrbty kníh.
+
+INŠTRUKCIE PRE EXTRAKCIU:
+1. Pre každý viditeľný chrbát knihy vráť normovaný bounding box [ymin, xmin, ymax, xmax] na škále 0 až 1000.
+2. Prečítaj zvislý, šikmý aj vodorovný text a extrahuj:
+   - title: Celý názov knihy (ak je nečitateľný, uveď "Nečitateľný titul").
+   - author: Meno autora (ak nie je uvedené, vráť null).
+   - publisher: Vydavateľstvo alebo edícia viditeľná na chrbte (napr. Tatran, Mladé letá, Odeon, Slovenský spisovateľ, KMP).
+   - binding_type: "pevná s prebalom" | "pevná väzba" | "brožovaná" | "neznáma".
+   - confidence: Číslo od 0.0 do 1.0 vyjadrujúce čitateľnosť textu.
+   - rarity_tier:
+       * "COLLECTOR" (staršie prvo-vydania, ilustrované zväzky, fantasy/sci-fi klasika, odborné monografie, malé náklady, edície s vysokým dopytom)
+       * "LIQUID" (štandardná vyhľadávaná beletria a literatúra faktu s dobrou predajnosťou)
+       * "COMMON" (masové vydania, nečitateľné chrbty alebo bežné ležiaky)
+   - rarity_reason: 1 konkrétna veta vysvetľujúca zaradenie a čo skontrolovať v tiráži (napr. "Hľadajte 1. vydanie v tiráži a skontrolujte zachovalosť prebalu").
+   - search_query: Čistý vyhľadávací reťazec bez diakritických chýb (napr. "Tolkien Hobit Mlade leta").
+
+PRAVIDLÁ:
+- Nevymýšľaj si neexistujúce knihy ani fiktívne sumy v eurách.
+- Vráť striktne validný JSON objekt v tvare: {"books": [...]}.`;
+
+      const schema = {
+        type: 'OBJECT',
+        properties: {
+          books: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                title: { type: 'STRING' },
+                author: { type: 'STRING' },
+                publisher: { type: 'STRING' },
+                binding_type: { type: 'STRING' },
+                confidence: { type: 'NUMBER' },
+                rarity_tier: { type: 'STRING' },
+                rarity_reason: { type: 'STRING' },
+                search_query: { type: 'STRING' },
+                box_2d: { type: 'ARRAY', items: { type: 'NUMBER' } }
+              },
+              required: ['title', 'box_2d', 'confidence', 'rarity_tier']
+            }
+          }
+        },
+        required: ['books']
+      };
+
+      // Retry s automatickym prechodom na slabsi model pri limite/vypadku
+      let parsed = null;
+      let lastError = null;
+      const attempts = ['first', 'retry'];
+
+      for (let attempt = 0; attempt < attempts.length; attempt++) {
+        const modelNow = (attempt === 0) ? selectedModel : 'gemini-2.0-flash';
+        try {
+          el.statusMsg.innerText = (attempt > 0)
+            ? 'Limit prekročený – prepínam na Gemini 2.0 Flash...'
+            : `Analyzujem chrbty kníh cez ${selectedModel}...`;
+
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelNow}:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { text: systemPrompt },
+                  { inline_data: { mime_type: 'image/jpeg', data: base64Jpeg } }
+                ]
+              }],
+              generationConfig: {
+                response_mime_type: 'application/json',
+                responseSchema: schema,
+                temperature: 0.1
+              }
+            })
+          });
+
+          if (response.status === 429 || response.status === 500 || response.status === 503) {
+            lastError = new Error('API limit / dočasný výpadok');
+            if (attempt === 0) { await new Promise(r => setTimeout(r, 2000)); continue; }
+            break;
+          }
+
+          const data = await response.json();
+          if (data.error) throw new Error(data.error.message || 'Chyba API volania');
+
+          const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          parsed = safeParseJSON(rawText);
+          break;
+        } catch (err) {
+          lastError = err;
+          if (attempt === 0) { await new Promise(r => setTimeout(r, 1500)); continue; }
+          break;
+        }
+      }
+
+      if (parsed && Array.isArray(parsed.books)) {
+        renderBoundingBoxes(parsed.books);
+        el.statusMsg.innerText = `Analýza hotová. Klikni na vyznačenú knihu pre detail a overenie trhu.`;
+      } else {
+        throw lastError || new Error('Model nevrátil žiadne údaje o knihách.');
+      }
+    }
+
+    // 4. VYKRESLENIE BOUNDING BOXOV (Presné mapovanie na obraz)
+    function renderBoundingBoxes(books) {
+      el.detectionOverlay.innerHTML = '';
+      el.legendPanel.classList.remove('hidden');
+      el.detectedCounter.innerText = `${books.length} kníh`;
+
+      books.forEach((book) => {
+        // Fallback: model moze vratit box_2d alebo bounding_box_2d
+        let b = book.box_2d || book.bounding_box_2d;
+        if (!Array.isArray(b) || b.length !== 4) return;
+
+        const ymin = Math.max(0, Math.min(1000, Number(b[0]) || 0));
+        const xmin = Math.max(0, Math.min(1000, Number(b[1]) || 0));
+        const ymax = Math.max(0, Math.min(1000, Number(b[2]) || 0));
+        const xmax = Math.max(0, Math.min(1000, Number(b[3]) || 0));
+
+        if (ymax <= ymin || xmax <= xmin) return;
+
+        const box = document.createElement('div');
+        box.className = 'book-box rounded-sm';
+        box.style.top = `${ymin / 10}%`;
+        box.style.left = `${xmin / 10}%`;
+        box.style.height = `${(ymax - ymin) / 10}%`;
+        box.style.width = `${(xmax - xmin) / 10}%`;
+
+        if (book.rarity_tier === 'COLLECTOR') {
+          box.style.border = '2px solid #34d399';
+          box.style.backgroundColor = 'rgba(16, 185, 129, 0.28)';
+        } else if (book.rarity_tier === 'LIQUID') {
+          box.style.border = '2px solid #fbbf24';
+          box.style.backgroundColor = 'rgba(245, 158, 11, 0.22)';
+        } else {
+          box.style.border = '1px solid rgba(148, 163, 184, 0.7)';
+          box.style.backgroundColor = 'rgba(71, 85, 105, 0.15)';
+        }
+
+        box.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (activeBoxElement) activeBoxElement.classList.remove('active-box');
+          box.classList.add('active-box');
+          activeBoxElement = box;
+          showBookDetail(book);
+        });
+
+        el.detectionOverlay.appendChild(box);
+      });
+    }
+
+    // Zobrazenie detailu a generovanie vyhľadávacích liniek
+    function showBookDetail(book) {
+      el.detailCard.classList.remove('hidden');
+
+      const confPercent = Math.round((Number(book.confidence) || 0.85) * 100);
+      el.detailConfidence.innerText = `OCR istota: ${confPercent}%`;
+      el.detailTitle.innerText = book.title || 'Neznámy titul';
+      el.detailAuthor.innerText = book.author || 'Autor neuvedený na chrbte';
+      el.detailPublisher.innerText = book.publisher || 'Nezistené';
+      el.detailBinding.innerText = book.binding_type || 'Nešpecifikovaná';
+      el.detailReason.innerText = book.rarity_reason || 'Skontrolujte rok vydania a náklad v tiráži knihy.';
+
+      if (book.rarity_tier === 'COLLECTOR') {
+        el.detailBadge.className = 'text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+        el.detailBadge.innerText = '🔥 Zberateľský potenciál';
+      } else if (book.rarity_tier === 'LIQUID') {
+        el.detailBadge.className = 'text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40';
+        el.detailBadge.innerText = '⚡ Dobrá likvidita';
+      } else {
+        el.detailBadge.className = 'text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700';
+        el.detailBadge.innerText = '📦 Bežný titul';
+      }
+
+      const rawQuery = book.search_query || `${book.title || ''} ${book.author || ''}`.trim();
+      const encodedQuery = encodeURIComponent(rawQuery);
+
+      el.linkTrhKnih.href = `https://www.trhknih.cz/hledat?q=${encodedQuery}`;
+      el.linkBazos.href = `https://knihy.bazos.sk/?hledat=${encodedQuery}`;
+      el.linkGoogle.href = `https://www.google.com/search?q=${encodeURIComponent(rawQuery + ' antikvariat cena')}`;
+
+      el.btnSaveBook.onclick = () => saveBookToStorage(book);
+      el.detailCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // Ukladanie a správa nálezov
+    function saveBookToStorage(book) {
+      const note = prompt('Voliteľná poznámka (napr. cena v antikvariáte / polica):', '');
+      if (note === null) return;
+
+      const entry = {
+        id: Date.now(),
+        title: book.title || 'Neznámy titul',
+        author: book.author || 'Neznámy autor',
+        publisher: book.publisher || '-',
+        tier: book.rarity_tier || 'COMMON',
+        note: note.trim(),
+        date: new Date().toLocaleDateString('sk-SK')
+      };
+
+      savedBooks.unshift(entry);
+      localStorage.setItem('SHADOWSHELF_SAVED_V2', JSON.stringify(savedBooks));
+      renderSavedList();
+    }
+
+    window.deleteSavedBook = function(id) {
+      savedBooks = savedBooks.filter(item => item.id !== id);
+      localStorage.setItem('SHADOWSHELF_SAVED_V2', JSON.stringify(savedBooks));
+      renderSavedList();
+    };
+
+    function renderSavedList() {
+      el.savedCount.innerText = savedBooks.length;
+      if (savedBooks.length === 0) {
+        el.savedList.innerHTML = '<p class="text-slate-500 italic py-2">Zatiaľ žiadne uložené úlovky.</p>';
+        return;
+      }
+
+      el.savedList.innerHTML = savedBooks.map(item => {
+        const badgeColor = item.tier === 'COLLECTOR' ? 'text-emerald-400' : (item.tier === 'LIQUID' ? 'text-amber-400' : 'text-slate-400');
+        const query = encodeURIComponent(`${item.title} ${item.author}`);
+        return `
+          <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800 flex justify-between items-center gap-2">
+            <div class="min-w-0 flex-1">
+              <div class="font-bold text-slate-100 truncate flex items-center gap-1.5">
+                <span class="${badgeColor}">●</span>
+                <span>${item.title}</span>
+              </div>
+              <div class="text-[11px] text-slate-400 truncate">${item.author} • ${item.publisher} (${item.date})</div>
+              ${item.note ? `<div class="text-[11px] text-amber-300/90 mt-0.5 italic">📌 ${item.note}</div>` : ''}
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <a href="https://www.trhknih.cz/hledat?q=${query}" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded text-[10px] border border-slate-700">TrhKnih</a>
+              <button onclick="deleteSavedBook(${item.id})" class="text-slate-500 hover:text-rose-400 px-1.5 py-1 text-sm" title="Odstrániť">✕</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Export do CSV
+    el.btnExportCsv.addEventListener('click', () => {
+      if (savedBooks.length === 0) {
+        alert('Zoznam úlovkov je prázdny.');
+        return;
+      }
+      const headers = ['Datum', 'Nazov', 'Autor', 'Vydavatelstvo', 'Kategoria', 'Poznamka'];
+      const rows = savedBooks.map(b => [
+        b.date,
+        `"${(b.title || '').replace(/"/g, '""')}"`,
+        `"${(b.author || '').replace(/"/g, '""')}"`,
+        `"${(b.publisher || '').replace(/"/g, '""')}"`,
+        b.tier,
+        `"${(b.note || '').replace(/"/g, '""')}"`
+      ]);
+      const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `shadowshelf_ulovky_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    el.btnClearSaved.addEventListener('click', () => {
+      if (savedBooks.length > 0 && confirm('Naozaj vymazať všetky uložené knihy?')) {
+        savedBooks = [];
+        localStorage.setItem('SHADOWSHELF_SAVED_V2', JSON.stringify(savedBooks));
+        renderSavedList();
+      }
+    });
+
+    // 5. DEMO REŽIM (Lokálne vygenerovaný SVG obraz police pre okamžitý test 1:1 zarovnania)
+    el.btnDemo.addEventListener('click', () => {
+      const svgShelf = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
+        <rect width="800" height="500" fill="#1e293b"/>
+        <rect x="0" y="450" width="800" height="50" fill="#451a03"/>
+        <!-- Kniha 1 -->
+        <rect x="80" y="70" width="90" height="380" rx="4" fill="#064e3b" stroke="#047857" stroke-width="2"/>
+        <text x="125" y="260" fill="#fde68a" font-family="serif" font-size="20" font-weight="bold" text-anchor="middle" transform="rotate(-90 125 260)">MÁGIA STARÝCH SLOVANOV</text>
+        <!-- Kniha 2 -->
+        <rect x="175" y="90" width="75" height="360" rx="3" fill="#7c2d12" stroke="#9a3412" stroke-width="2"/>
+        <text x="212" y="270" fill="#fed7aa" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" transform="rotate(-90 212 270)">J.R.R. TOLKIEN • HOBIT</text>
+        <!-- Kniha 3 -->
+        <rect x="255" y="110" width="65" height="340" rx="3" fill="#1e3a8a" stroke="#1d4ed8" stroke-width="2"/>
+        <text x="287" y="280" fill="#bfdbfe" font-family="sans-serif" font-size="16" text-anchor="middle" transform="rotate(-90 287 280)">DEJINY ARCHITEKTÚRY</text>
+        <!-- Kniha 4 -->
+        <rect x="325" y="120" width="85" height="330" rx="3" fill="#334155" stroke="#475569" stroke-width="2"/>
+        <text x="367" y="285" fill="#cbd5e1" font-family="sans-serif" font-size="16" text-anchor="middle" transform="rotate(-90 367 285)">VÝBER ZO SVETOVEJ PRÓZY</text>
+      </svg>`;
+
+      const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgShelf);
+      el.previewImage.src = dataUrl;
+      el.previewImage.onload = () => {
+        el.emptyState.classList.add('hidden');
+        el.imageWrapper.classList.remove('hidden');
+        el.compressionBadge.classList.remove('hidden');
+        el.compressionBadge.innerText = 'DEMO (800×500 px • 1:1 Overlay)';
+
+        const demoBooks = [
+          {
+            box_2d: [140, 100, 900, 212],
+            title: "Mágia a mýty starých Slovanov",
+            author: "N. P. Andrejev",
+            publisher: "Tatran (Edícia Korene)",
+            binding_type: "pevná s prebalom",
+            confidence: 0.98,
+            rarity_tier: "COLLECTOR",
+            rarity_reason: "Vypredaná etnografická monografia z r. 1982. Skontrolujte v tiráži náklad (do 3000 ks) a nepoškodenosť papierového prebalu.",
+            search_query: "Magia a myty starych Slovanov Tatran"
+          },
+          {
+            box_2d: [180, 218, 900, 312],
+            title: "Hobit",
+            author: "J. R. R. Tolkien",
+            publisher: "Mladé letá",
+            binding_type: "pevná väzba",
+            confidence: 0.96,
+            rarity_tier: "COLLECTOR",
+            rarity_reason: "Ak ide o 1. slovenské vydanie (1973, ilustrácie J. Švec), patrí medzi vysoko cenené zberateľské kusy.",
+            search_query: "Tolkien Hobit Mlade leta 1973"
+          },
+          {
+            box_2d: [220, 318, 900, 400],
+            title: "Dejiny svetovej architektúry",
+            author: "Kolektív autorov",
+            publisher: "Veda",
+            binding_type: "pevná väzba",
+            confidence: 0.92,
+            rarity_tier: "LIQUID",
+            rarity_reason: "Stále žiadaná odborná literatúra pre študentov a architektov, rýchlo predajná na sekundárnom trhu.",
+            search_query: "Dejiny svetovej architektury Veda"
+          },
+          {
+            box_2d: [240, 406, 900, 512],
+            title: "Výber zo svetovej prózy",
+            author: "Rôzni autori",
+            publisher: "Smena",
+            binding_type: "pevná väzba",
+            confidence: 0.90,
+            rarity_tier: "COMMON",
+            rarity_reason: "Masové klubové vydanie z 80. rokov vo vysokom náklade (nad 30 000 ks), nízka trhová hodnota.",
+            search_query: "Vyber zo svetovej prozy Smena"
+          }
+        ];
+
+        renderBoundingBoxes(demoBooks);
+        showBookDetail(demoBooks[0]);
+        el.statusMsg.innerText = 'Ukážka načítaná. Klikni na ľubovoľnú knihu na polici.';
+      };
+    });
+  </script>
+</body>
+</html>
