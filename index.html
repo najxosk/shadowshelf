@@ -119,6 +119,8 @@
         <div class="grid grid-cols-2 gap-2">
           <div><span class="text-slate-400">Vydavateľ/Edícia:</span> <strong id="detailPublisher" class="text-slate-200 block">-</strong></div>
           <div><span class="text-slate-400">Väzba:</span> <strong id="detailBinding" class="text-slate-200 block">-</strong></div>
+          <div><span class="text-slate-400">ISBN:</span> <strong id="detailIsbn" class="text-slate-200 block">-</strong></div>
+          <div><span class="text-slate-400">Odhad ceny (ojazdená):</span> <strong id="detailPrice" class="text-amber-300 block">-</strong></div>
         </div>
         <div class="pt-1.5 border-t border-slate-800/80">
           <span class="text-amber-400/90 font-semibold">🔎 Zberateľská indícia & Tiráž:</span>
@@ -201,6 +203,8 @@
       detailAuthor: document.getElementById('detailAuthor'),
       detailPublisher: document.getElementById('detailPublisher'),
       detailBinding: document.getElementById('detailBinding'),
+      detailIsbn: document.getElementById('detailIsbn'),
+      detailPrice: document.getElementById('detailPrice'),
       detailReason: document.getElementById('detailReason'),
       linkKnihovratok: document.getElementById('linkKnihovratok'),
       linkBazos: document.getElementById('linkBazos'),
@@ -362,6 +366,8 @@ INŠTRUKCIE PRE EXTRAKCIU:
    - author: Meno autora (ak nie je uvedené, vráť null).
    - publisher: Vydavateľstvo alebo edícia viditeľná na chrbte (napr. Tatran, Mladé letá, Odeon, Slovenský spisovateľ, KMP).
    - binding_type: "pevná s prebalom" | "pevná väzba" | "brožovaná" | "neznáma".
+   - isbn: ISBN-13 (alebo ISBN-10) z 10-13 číslic s pomlčkami (čítaj ho z prebalu, z barcodu nalepeného na chrbte alebo z titulného listu). Ak nie je žiadny ISBN viditeľný, vráť null. Nikdy si ISBN nevymýšľaj.
+   - estimated_price_eur: Reálny odhad typickej trhovej ceny tejto konkrétnej ojazdenej knihy na sekundárnom trhu v EUR (antikvariát/výkup – trhová cena, nie cena nového). Môže byť aj nízka (napr. 0,50 €). Odhadni čo najrozumnejšie podľa vydania, roku a žiadanosti; pre vzácne zberateľské kusy uveď trochu vyššie.
    - confidence: Číslo od 0.0 do 1.0 vyjadrujúce čitateľnosť textu.
    - rarity_tier:
        * "COLLECTOR" (staršie prvo-vydania, ilustrované zväzky, fantasy/sci-fi klasika, odborné monografie, malé náklady, edície s vysokým dopytom)
@@ -371,7 +377,7 @@ INŠTRUKCIE PRE EXTRAKCIU:
    - search_query: Čistý vyhľadávací reťazec bez diakritických chýb (napr. "Tolkien Hobit Mlade leta").
 
 PRAVIDLÁ:
-- Nevymýšľaj si neexistujúce knihy ani fiktívne sumy v eurách.
+- Nevymýšľaj si neexistujúce knihy. estimated_price_eur je LEN odhad trhovej ceny ojazdenej knihy (nie overený predaj).
 - Vráť striktne validný JSON objekt v tvare: {"books": [...]}.`;
 
       const schema = {
@@ -386,6 +392,8 @@ PRAVIDLÁ:
                 author: { type: 'STRING' },
                 publisher: { type: 'STRING' },
                 binding_type: { type: 'STRING' },
+                isbn: { type: 'STRING' },
+                estimated_price_eur: { type: 'NUMBER' },
                 confidence: { type: 'NUMBER' },
                 rarity_tier: { type: 'STRING' },
                 rarity_reason: { type: 'STRING' },
@@ -518,6 +526,9 @@ PRAVIDLÁ:
       el.detailAuthor.innerText = book.author || 'Autor neuvedený na chrbte';
       el.detailPublisher.innerText = book.publisher || 'Nezistené';
       el.detailBinding.innerText = book.binding_type || 'Nešpecifikovaná';
+      el.detailIsbn.innerText = book.isbn || 'Nezistené';
+      const price = Number(book.estimated_price_eur);
+      el.detailPrice.innerText = (Number.isFinite(price) && price >= 0) ? `odhad ~ ${price.toFixed(2)} €` : '—';
       el.detailReason.innerText = book.rarity_reason || 'Skontrolujte rok vydania a náklad v tiráži knihy.';
 
       if (book.rarity_tier === 'COLLECTOR') {
@@ -534,10 +545,16 @@ PRAVIDLÁ:
       const rawQuery = book.search_query || `${book.title || ''} ${book.author || ''}`.trim();
       const encodedQuery = encodeURIComponent(rawQuery);
 
-      el.linkKnihovratok.href = `https://www.martinus.sk/knihovratok`;
+      const isbnDigits = (book.isbn || '').replace(/\D/g, '');
+      const hasIsbn = isbnDigits.length >= 10;
+      el.linkKnihovratok.href = hasIsbn
+        ? `https://www.martinus.sk/knihovratok?search=${isbnDigits}`
+        : `https://www.martinus.sk/knihovratok`;
       el.linkBazos.href = `https://knihy.bazos.sk/?hledat=${encodedQuery}`;
       el.linkBookbot.href = `https://bookbot.sk/p?search=${encodedQuery}`;
-      el.linkRestorio.href = `https://www.restorio.sk/all-products?search=${encodedQuery}`;
+      el.linkRestorio.href = hasIsbn
+        ? `https://www.restorio.sk/${isbnDigits}`
+        : `https://www.restorio.sk/all-products?search=${encodedQuery}`;
       el.linkTrhKnih.href = `https://www.trhknih.cz/hledat?q=${encodedQuery}`;
       el.linkGoogle.href = `https://www.google.com/search?q=${encodeURIComponent(rawQuery + ' antikvariat cena')}`;
 
@@ -556,6 +573,8 @@ PRAVIDLÁ:
         author: book.author || 'Neznámy autor',
         publisher: book.publisher || '-',
         tier: book.rarity_tier || 'COMMON',
+        isbn: book.isbn || '',
+        price: (Number.isFinite(Number(book.estimated_price_eur)) && Number(book.estimated_price_eur) >= 0) ? Number(book.estimated_price_eur) : null,
         note: note.trim(),
         date: new Date().toLocaleDateString('sk-SK')
       };
@@ -588,7 +607,7 @@ PRAVIDLÁ:
                 <span class="${badgeColor}">●</span>
                 <span>${item.title}</span>
               </div>
-              <div class="text-[11px] text-slate-400 truncate">${item.author} • ${item.publisher} (${item.date})</div>
+              <div class="text-[11px] text-slate-400 truncate">${item.price != null ? item.price.toFixed(2) + ' €' : '—'} • ${item.author} • ${item.publisher} (${item.date})</div>
               ${item.note ? `<div class="text-[11px] text-amber-300/90 mt-0.5 italic">📌 ${item.note}</div>` : ''}
             </div>
             <div class="flex items-center gap-1.5 shrink-0">
@@ -606,13 +625,15 @@ PRAVIDLÁ:
         alert('Zoznam úlovkov je prázdny.');
         return;
       }
-      const headers = ['Datum', 'Nazov', 'Autor', 'Vydavatelstvo', 'Kategoria', 'Poznamka'];
+      const headers = ['Datum', 'Nazov', 'Autor', 'Vydavatelstvo', 'Kategoria', 'ISBN', 'CenaEUR', 'Poznamka'];
       const rows = savedBooks.map(b => [
         b.date,
         `"${(b.title || '').replace(/"/g, '""')}"`,
         `"${(b.author || '').replace(/"/g, '""')}"`,
         `"${(b.publisher || '').replace(/"/g, '""')}"`,
         b.tier,
+        `"${(b.isbn || '').replace(/"/g, '""')}"`,
+        b.price != null ? b.price.toFixed(2) : '',
         `"${(b.note || '').replace(/"/g, '""')}"`
       ]);
       const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
@@ -667,6 +688,8 @@ PRAVIDLÁ:
             author: "N. P. Andrejev",
             publisher: "Tatran (Edícia Korene)",
             binding_type: "pevná s prebalom",
+            isbn: null,
+            estimated_price_eur: 18.0,
             confidence: 0.98,
             rarity_tier: "COLLECTOR",
             rarity_reason: "Vypredaná etnografická monografia z r. 1982. Skontrolujte v tiráži náklad (do 3000 ks) a nepoškodenosť papierového prebalu.",
@@ -678,6 +701,8 @@ PRAVIDLÁ:
             author: "J. R. R. Tolkien",
             publisher: "Mladé letá",
             binding_type: "pevná väzba",
+            isbn: "9788070661095",
+            estimated_price_eur: 28.0,
             confidence: 0.96,
             rarity_tier: "COLLECTOR",
             rarity_reason: "Ak ide o 1. slovenské vydanie (1973, ilustrácie J. Švec), patrí medzi vysoko cenené zberateľské kusy.",
@@ -689,6 +714,8 @@ PRAVIDLÁ:
             author: "Kolektív autorov",
             publisher: "Veda",
             binding_type: "pevná väzba",
+            isbn: null,
+            estimated_price_eur: 6.0,
             confidence: 0.92,
             rarity_tier: "LIQUID",
             rarity_reason: "Stále žiadaná odborná literatúra pre študentov a architektov, rýchlo predajná na sekundárnom trhu.",
@@ -700,6 +727,8 @@ PRAVIDLÁ:
             author: "Rôzni autori",
             publisher: "Smena",
             binding_type: "pevná väzba",
+            isbn: null,
+            estimated_price_eur: 1.5,
             confidence: 0.90,
             rarity_tier: "COMMON",
             rarity_reason: "Masové klubové vydanie z 80. rokov vo vysokom náklade (nad 30 000 ks), nízka trhová hodnota.",
